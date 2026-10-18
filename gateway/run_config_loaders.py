@@ -262,6 +262,14 @@ class GatewayConfigLoadersMixin:
             return legacy
         return "queue" if GatewayRunner._load_busy_input_mode() == "queue" else "interrupt"
 
+    @classmethod
+    def _load_busy_media_steer(cls) -> str:
+        """Opt-in media steering for busy chat messages (default ``off``)."""
+        mode = cls._env_or_cfg_str(
+            "HERMES_GATEWAY_BUSY_MEDIA_STEER", "display", "busy_media_steer"
+        ).lower()
+        return mode if mode in {"off", "text"} else "off"
+
     @staticmethod
     def _busy_modes_from_config(config: dict, *, fallback_input: str, fallback_text: str) -> tuple[str, str]:
         """Resolve one profile's busy modes without consulting process env."""
