@@ -1960,7 +1960,7 @@ display:
   # Toggle at runtime with /busy <interrupt|queue|steer>.
   busy_input_mode: interrupt
 
-  # Opt-in media steering for busy chat messages: off | text.
+  # Opt-in media steering for busy chat messages: off | text. Gateway-global.
   busy_media_steer: off
 
   # Background process notifications (gateway/messaging only).

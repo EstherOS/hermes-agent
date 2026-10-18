@@ -1409,12 +1409,9 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayPluginInjectionMixin)
         """Route images natively (attach pixels at run_conversation) or pre-analyze them into text."""
         # See agent/image_routing.py. Offloaded to a thread: the decision does blocking network I/O
         # (models.dev fetch on cache miss, Ollama /api/show probe) that would stall the event loop.
-        if force_text:
-            _img_mode = "text"
-        else:
-            _img_mode = await asyncio.to_thread(
-                self._decide_image_input_mode, source=source, session_key=session_key,
-            )
+        _img_mode = "text" if force_text else await asyncio.to_thread(
+            self._decide_image_input_mode, source=source, session_key=session_key,
+        )
         if _img_mode == "native":
             self._session_state(session_key).persistent.native_image_paths = list(image_paths)
             logger.info(
@@ -1637,9 +1634,7 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayPluginInjectionMixin)
         @ references behave the same. Side effect: buffers per-session native image paths when the
         model supports native vision; the caller consumes that buffer at ``run_conversation``.
 
-        ``for_steer`` keeps the same preparation but forces image descriptions and leaves the
-        running turn's native-image buffer untouched. It is for mid-turn payloads that cannot
-        consume the next-turn buffer.
+        ``for_steer`` forces image descriptions and leaves the native-image buffer alone.
         """
         prepared = getattr(event, "_gateway_busy_steer_prepared_text", None)
         if prepared is not None:
@@ -1677,11 +1672,11 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayPluginInjectionMixin)
 
     async def _prepare_profile_scoped_inbound_message_text(
         self, *, event: MessageEvent, source: SessionSource, history: list[dict[str, Any]],
-        session_key: Optional[str] = None,
+        session_key: Optional[str] = None, for_steer: bool = False,
     ) -> Optional[str]:
         """Run inbound preprocessing under the routed profile when multiplexed."""
         from gateway.run import _async_profile_runtime_scope
-        kwargs = dict(event=event, source=source, history=history, session_key=session_key)
+        kwargs = dict(event=event, source=source, history=history, session_key=session_key, for_steer=for_steer)
         if getattr(getattr(self, "config", None), "multiplex_profiles", False):
             async with _async_profile_runtime_scope(self._resolve_profile_home_for_source(source)):
                 return await self._prepare_inbound_message_text(**kwargs)

@@ -509,17 +509,30 @@ class GatewayBusySessionMixin:
     async def _prepare_busy_steer_text(self, event: MessageEvent, session_key: Optional[str] = None) -> str:
         """Steerable text for a busy follow-up, transcribing voice-message media first.
 
-        With ``display.busy_media_steer: text``, media follow-ups run through the shared inbound
-        preparation so images become vision descriptions, documents and video get notes, and the
-        normal sender/reply context is retained. The preparation is cached on the event so a failed
-        steer that falls back to the queue does not run vision or STT twice.
+        With ``display.busy_media_steer: text``, image, document and video follow-ups run through
+        the shared inbound preparation so they become vision descriptions and path notes, with the
+        normal sender and reply context retained. Voice keeps the existing STT branch: it writes
+        the per-event transcript cache and echo ledger, so a steer that falls back to the queue is
+        drained without a second transcription (#58780). Mixed voice plus other media runs that STT
+        pass first for the same reason; the shared preparation then skips STT and starts from the
+        transcript. The prepared payload is cached on the event so the queue fallback does not
+        repeat vision either.
         """
         text = (event.text or "").strip()
-        if self._busy_media_steer_mode() == "text" and (event.media_urls or event.media_types):
+        audio_paths = self._pending_event_audio_paths(event)
+        media_urls = getattr(event, "media_urls", None) or []
+        voice_only = bool(media_urls) and len(audio_paths) == len(media_urls)
+        if self._busy_media_steer_mode() == "text" and media_urls and not voice_only:
             prepared = getattr(event, "_gateway_busy_steer_prepared_text", None)
             if prepared is not None:
                 return prepared
-            prepared = await self._prepare_inbound_message_text(
+            if audio_paths:
+                text, _ = await self._transcribe_and_echo_pending_voice(
+                    event, self._delivery_adapter_for(event.source), event.source, text,
+                    log_context="Busy-steer",
+                )
+                text = (text or "").strip()
+            prepared = await self._prepare_profile_scoped_inbound_message_text(
                 event=event,
                 source=event.source,
                 history=[],
@@ -527,7 +540,7 @@ class GatewayBusySessionMixin:
                 for_steer=True,
             )
             return (prepared or "").strip()
-        if not self._pending_event_audio_paths(event):
+        if not audio_paths:
             return text
         enriched_text, successful_transcripts = await self._transcribe_and_echo_pending_voice(
             event, self._delivery_adapter_for(event.source), event.source, text, log_context="Busy-steer"

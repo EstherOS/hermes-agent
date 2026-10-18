@@ -264,11 +264,21 @@ class GatewayConfigLoadersMixin:
 
     @classmethod
     def _load_busy_media_steer(cls) -> str:
-        """Opt-in media steering for busy chat messages (default ``off``)."""
-        mode = cls._env_or_cfg_str(
+        """Opt-in media steering for busy chat messages (default ``off``).
+
+        Gateway-global, like the launch-time busy modes: a multiplexed gateway applies one value
+        to every profile. An unrecognized value is rejected with a warning naming the key, never
+        silently coerced.
+        """
+        raw = cls._env_or_cfg_str(
             "HERMES_GATEWAY_BUSY_MEDIA_STEER", "display", "busy_media_steer"
-        ).lower()
-        return mode if mode in {"off", "text"} else "off"
+        ).strip().lower()
+        if not raw:
+            return "off"
+        if raw not in {"off", "text"}:
+            logger.warning("display.busy_media_steer=%r is not off|text; using off", raw)
+            return "off"
+        return raw
 
     @staticmethod
     def _busy_modes_from_config(config: dict, *, fallback_input: str, fallback_text: str) -> tuple[str, str]:
